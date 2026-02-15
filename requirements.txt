@@ -1,0 +1,20 @@
+# RunPod serverless SDK (needs brotli to decode job payloads from RunPod control plane)
+# aiohttp tries brotlicffi first, then brotli
+runpod>=1.7.0
+brotlicffi>=1.0.0
+brotli>=1.0.9
+
+# PyTorch (use CUDA build in Docker; version should match base image)
+torch
+torchvision
+
+# RVM inference deps (inference_utils: VideoReader, VideoWriter)
+av
+tqdm
+pims
+
+# Download video from URL (streaming)
+requests>=2.28.0
+
+# Cloudinary upload (server-side; use CLOUDINARY_URL or api_key/secret)
+cloudinary>=1.36.0
