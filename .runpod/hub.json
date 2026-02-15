@@ -1,0 +1,27 @@
+{
+  "title": "RobustVideoMatting Runpod Serverless",
+  "description": "Video background removal with RVM. Send a video URL; get back a Cloudinary URL of the processed video (transparent background). Queue-based, scale-to-zero.",
+  "type": "serverless",
+  "category": "video",
+  "iconUrl": "https://raw.githubusercontent.com/PeterL1n/RobustVideoMatting/master/docs/teaser.gif",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 25,
+    "gpuCount": 1,
+    "env": [
+      {
+        "key": "RUNPOD_INIT_TIMEOUT",
+        "value": "600"
+      },
+      {
+        "key": "CLOUDINARY_URL",
+        "input": {
+          "name": "Cloudinary URL",
+          "type": "string",
+          "description": "cloudinary://API_KEY:API_SECRET@CLOUD_NAME (from Cloudinary Console → API Keys)",
+          "default": ""
+        }
+      }
+    ]
+  }
+}

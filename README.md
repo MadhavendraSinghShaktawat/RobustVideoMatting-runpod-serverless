@@ -1,5 +1,7 @@
 # RunPod RVM Worker
 
+[![Runpod](https://api.runpod.io/badge/MadhavendraSinghShaktawat/RobustVideoMatting-runpod-serverless)](https://console.runpod.io/hub/MadhavendraSinghShaktawat/RobustVideoMatting-runpod-serverless)
+
 **Serverless video background removal** on [RunPod](https://runpod.io) using [RobustVideoMatting](https://github.com/PeterL1n/RobustVideoMatting) (RVM). Submit a video URL; the worker downloads it, runs matting inference on GPU, uploads the result to **Cloudinary**, and returns the output URL. Scale-to-zero, pay-per-use.
 
 ---

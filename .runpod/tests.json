@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "validation_missing_video_url",
+      "input": {
+        "input": {}
+      },
+      "timeout": 15000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1,
+    "env": [
+      {
+        "key": "RUNPOD_INIT_TIMEOUT",
+        "value": "600"
+      },
+      {
+        "key": "CLOUDINARY_URL",
+        "value": "ENV_VALUE_HERE"
+      }
+    ],
+    "allowedCudaVersions": ["12.1", "12.0", "11.8", "11.7"]
+  }
+}
