@@ -183,8 +183,8 @@ def handler(job):
         output_url = upload_to_cloudinary(output_path, job, progress_update, folder=cloudinary_folder)
         progress_update("Done (100%)")
         logger.info("job_done job_id=%s output_url_len=%s", job_id, len(output_url or ""))
-        # Return plain URL; SDK wraps in {"output": ...}. Nested {"output": {"output_url": ...}} can still cause 400.
-        return output_url
+        # Return dict so RunPod marks job COMPLETED and dashboard updates (plain string can leave status "In Progress").
+        return {"output_url": output_url}
     except Exception as e:
         logger.exception("job_failed job_id=%s error_type=%s error=%s", job_id, type(e).__name__, e)
         # error must be a string (dict causes 400)
