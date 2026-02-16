@@ -80,7 +80,7 @@ Image URL: **`docker.io/YOUR_DOCKERHUB_USERNAME/runpod-rvm-worker:latest`**
 curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/run" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \
-  -d '{"input":{"video_url":"https://example.com/your-video.mp4"}}'
+  -d '{"input":{"video_url":"https://example.com/your-video.mp4","output_type":"alpha"}}'
 ```
 
 Response: `{"id":"JOB_ID","status":"IN_QUEUE",...}`
@@ -92,7 +92,7 @@ curl "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/status/JOB_ID" \
   -H "Authorization: Bearer YOUR_RUNPOD_API_KEY"
 ```
 
-When completed, `output` is the Cloudinary URL of the processed video (string). On failure, `output` contains an object with `error` (string).
+When completed, `output` contains `output_url` (Cloudinary URL) and, for alpha jobs, `output_format: "webm"`. On failure, `output` contains `error` (string).
 
 ---
 
@@ -116,13 +116,15 @@ When completed, `output` is the Cloudinary URL of the processed video (string). 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `video_url` | **Yes** | HTTP(S) URL of the source video. Max size 500 MB. |
-| `downsample_ratio` | No | RVM downsample ratio (e.g. `0.25` for 1080p). Default `0.25`. |
+| `output_type` | No | `"greenscreen"` (default) = H.264 MP4 with green background; `"alpha"` = WebM VP9 with alpha; `"alpha_prores"` = ProRes 4444 with alpha (faster encode, larger file; good for Safari). |
+| `downsample_ratio` | No | RVM downsample ratio (e.g. `0.25` for 1080p). Default `0.25`. Lower = faster, higher = better quality. |
+| `speed` or `preset` | No | `"fast"` = use downsample_ratio 0.125 (faster, lower quality); `"quality"` / `"best"` = prefer quality when downsample_ratio not set. |
 | `cloudinary_folder` | No | Cloudinary folder for the output video. Default `rvm-output`. |
 
 ### Job output
 
-- **Success:** `output` is the Cloudinary URL string (e.g. `https://res.cloudinary.com/.../video/upload/.../output.mp4`).
-- **Failure:** `output` is an object with `error` (string message).
+- **Success:** `output` has `output_url` (Cloudinary URL) and, for alpha jobs, `output_format` (`"webm"` or `"prores"`) so the client can treat the asset as transparent video.
+- **Failure:** `output` has `error` (string message).
 
 ### Progress
 
@@ -165,7 +167,20 @@ runpod-rvm-worker/
 └── README.md
 ```
 
-The image is self-contained: RVM and the MobilenetV3 checkpoint are cloned and downloaded during the Docker build.
+The image is self-contained: RVM and the MobilenetV3 checkpoint are cloned and downloaded during the Docker build. **FFmpeg** is installed from a pinned static build ([BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)) so `output_type` **alpha** (WebM VP9) and **alpha_prores** (ProRes 4444) work reliably; distro/conda FFmpeg often lacks the required encoders or uses different CLI options.
+
+---
+
+## FFmpeg requirements (root cause of encoder errors)
+
+The worker needs FFmpeg with:
+
+- **libvpx_vp9** — for WebM VP9 with alpha (`output_type=alpha` and ProRes→WebM fallback).
+- **prores_ks** — for ProRes 4444 with alpha (`output_type=alpha_prores`).
+
+**Why this matters:** Unpinned FFmpeg (e.g. from `apt install ffmpeg` or the base image's conda) can be an older or minimal build that (1) misses these encoders, or (2) uses different options (e.g. no `-quality realtime` in 4.3). The Dockerfile pins a static build so version and options are consistent. At startup the worker runs `ffmpeg -encoders` and exits with a clear error if any required encoder is missing.
+
+**If you use a custom image:** Install a full FFmpeg build (e.g. [BtbN](https://github.com/BtbN/FFmpeg-Builds) or [jrottenberg/ffmpeg](https://github.com/jrottenberg/ffmpeg) Docker image) and ensure `ffmpeg` in `PATH` reports both encoders.
 
 ---
 
@@ -173,10 +188,12 @@ The image is self-contained: RVM and the MobilenetV3 checkpoint are cloned and d
 
 | Issue | What to do |
 |-------|------------|
+| **"ffmpeg missing required encoders"** / **"Unrecognized option 'quality'"** | Use the project's Dockerfile (it pins a static FFmpeg). If using your own image, install FFmpeg with libvpx and prores_ks (see [FFmpeg requirements](#ffmpeg-requirements-root-cause-of-encoder-errors)). |
 | **"Can not decode content-encoding: br"** | Image includes `brotlicffi`/`brotli`. Rebuild and redeploy so new workers use the latest image. |
 | **Worker fails to start / init timeout** | Increase `RUNPOD_INIT_TIMEOUT` (e.g. `600` or `800`). |
 | **"Failed to return job results. 400 Bad Request"** | Handler returns a plain URL string on success and `{"error": "string"}` on failure. Ensure you’re on the latest handler (no nested `output` or `null` error). |
 | **Job stuck IN_PROGRESS** | Usually means the job-done API rejected the result (400). Check worker logs; fix return format and redeploy. |
+| **"File size too large" (Cloudinary)** | ProRes files >100 MB are auto-converted to WebM for upload. If upload still fails, check Cloudinary plan limits or set `CLOUDINARY_MAX_FILE_BYTES`. |
 
 ---
 

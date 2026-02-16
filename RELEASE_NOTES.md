@@ -25,8 +25,14 @@
 | Field | Required | Description |
 |-------|----------|-------------|
 | `video_url` | Yes | HTTP(S) URL of the source video. |
+| `output_type` | No | `"greenscreen"` (default), `"alpha"` (WebM + alpha), `"alpha_prores"` (ProRes 4444 + alpha, good for Safari). |
 | `downsample_ratio` | No | RVM downsample ratio (default `0.25`). |
+| `speed` / `preset` | No | `"fast"` = faster (0.125); `"quality"` / `"best"` = prefer quality. |
 | `cloudinary_folder` | No | Cloudinary folder for output (default `rvm-output`). |
+
+### Job output
+
+- Success: `output` has `output_url` and, for alpha, `output_format` (`"webm"` or `"prores"`). Failure: `output` has `error`.
 
 ### Quick test
 
@@ -39,7 +45,7 @@ curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/run" \
   -d '{"input":{"video_url":"https://example.com/sample.mp4"}}'
 ```
 
-Then poll `/status/JOB_ID` until `status` is `COMPLETED`; `output` is the result URL.
+Then poll `/status/JOB_ID` until `status` is `COMPLETED`; `output.output_url` is the result URL.
 
 ---
 

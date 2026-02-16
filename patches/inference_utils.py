@@ -1,33 +1,119 @@
 import av
 import os
 from fractions import Fraction
+from queue import Queue
+from threading import Thread
 
-import pims
 import numpy as np
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 from torchvision.transforms.functional import to_pil_image
 from PIL import Image
 
 
+def _get_stream_frame_count(stream) -> int:
+    """Best-effort frame count from stream metadata (avoids full decode when possible)."""
+    if stream.duration is not None and stream.time_base is not None and stream.average_rate is not None:
+        try:
+            dur_sec = float(stream.duration * stream.time_base)
+            rate = float(stream.average_rate)
+            if dur_sec > 0 and rate > 0:
+                return max(1, int(dur_sec * rate))
+        except (TypeError, ZeroDivisionError):
+            pass
+    return 0
+
+
 class VideoReader(Dataset):
+    """Decode with PyAV FRAME/AUTO threading; store frames in one contiguous array for cache-friendly access."""
+
     def __init__(self, path, transform=None):
-        self.video = pims.PyAVVideoReader(path)
-        self.rate = self.video.frame_rate
         self.transform = transform
+        self._rate = 30.0
+        container = av.open(path)
+        if len(container.streams.video) == 0:
+            container.close()
+            raise ValueError("No video stream")
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        self._rate = float(stream.average_rate) if stream.average_rate else 30.0
+        frames_list = []
+        for frame in container.decode(video=0):
+            frames_list.append(frame.to_ndarray(format="rgb24"))
+        container.close()
+        self._frames = np.stack(frames_list, axis=0) if frames_list else np.zeros((0, 1, 1, 3), dtype=np.uint8)
 
     @property
     def frame_rate(self):
-        return self.rate
+        return self._rate
 
     def __len__(self):
-        return len(self.video)
+        return len(self._frames)
 
     def __getitem__(self, idx):
-        frame = self.video[idx]
-        frame = Image.fromarray(np.asarray(frame))
+        frame = self._frames[idx]
+        frame = Image.fromarray(frame)
         if self.transform is not None:
             frame = self.transform(frame)
         return frame
+
+
+class StreamingVideoReader(IterableDataset):
+    """Producer-consumer: decode in background thread while consumer runs RVM. Overlaps decode with inference."""
+
+    def __init__(self, path, transform=None, queue_size=32):
+        self.path = path
+        self.transform = transform
+        self._queue_size = queue_size
+        self._rate = 30.0
+        self._total_frames = 0
+        container = av.open(path)
+        if len(container.streams.video) == 0:
+            container.close()
+            raise ValueError("No video stream")
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        self._rate = float(stream.average_rate) if stream.average_rate else 30.0
+        self._total_frames = _get_stream_frame_count(stream)
+        self._container = container
+        self._stream = stream
+        if self._total_frames == 0:
+            container.close()
+            self._container = None
+
+    @property
+    def frame_rate(self):
+        return self._rate
+
+    def __len__(self):
+        return self._total_frames if self._total_frames > 0 else 0
+
+    def _decoder_thread(self, queue: Queue) -> None:
+        if self._container is None:
+            queue.put(None)
+            return
+        try:
+            for frame in self._container.decode(video=0):
+                arr = frame.to_ndarray(format="rgb24")
+                queue.put(arr)
+            queue.put(None)
+        finally:
+            self._container.close()
+
+    def __iter__(self):
+        if self._total_frames == 0:
+            return
+        queue = Queue(maxsize=self._queue_size)
+        t = Thread(target=self._decoder_thread, args=(queue,))
+        t.start()
+        while True:
+            arr = queue.get()
+            if arr is None:
+                break
+            frame = Image.fromarray(arr)
+            if self.transform is not None:
+                frame = self.transform(frame)
+            yield frame
+        t.join()
 
 
 class VideoWriter:
